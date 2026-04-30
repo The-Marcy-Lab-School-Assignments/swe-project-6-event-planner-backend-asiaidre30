@@ -8,3 +8,7 @@ const config = {
 const prodConfig = {
   connectionString: process.env.PG_CONNECTION_STRING,
 };
+
+const pool = prodConfig ? new Pool(prodConfig) : new Pool(config);
+// const pool = new Pool(prodConfig);
+module.exports = pool;
