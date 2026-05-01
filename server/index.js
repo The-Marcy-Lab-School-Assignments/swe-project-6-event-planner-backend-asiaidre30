@@ -1,86 +1,116 @@
-// loads all the env variables from .env file gotta do this first
 require("dotenv").config();
-const express = require("express");
-const cookieSession = require("cookie-session"); // handles the session cookie stuff
+
 const path = require("path");
+const express = require("express");
+const cookieSession = require("cookie-session");
 
-// bringing in middleware
 const logRoutes = require("./middleware/logRoutes");
-const checkAuthentication = require("./middleware/checkAuthentication"); // blocks non logged in users
+const checkAuthentication = require("./middleware/checkAuthentication");
 
-// bringing in all the controllers (these handle what happens at each route)
-const authControllers = require("./controllers/authControllers");
-const userControllers = require("./controllers/userControllers");
-const eventControllers = require("./controllers/eventControllers");
-const rsvpControllers = require("./controllers/rsvpControllers");
+const {
+  register,
+  login,
+  me,
+  logout,
+} = require("./controllers/authControllers");
+
+const { updateUser, deleteUser } = require("./controllers/userControllers");
+
+const {
+  listEvents,
+  listEventsByUser,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+} = require("./controllers/eventControllers");
+
+const {
+  listRsvpsByUser,
+  createRsvp,
+  deleteRsvp,
+} = require("./controllers/rsvpControllers");
 
 const app = express();
-const PORT = process.env.PORT || 8080; // use .env port or default to 8080
+const PORT = process.env.PORT || 8080;
 
-// middleware that runs on every request
-app.use(express.json()); // lets us read req.body as json
+const pathToFrontend =
+  process.env.NODE_ENV === "production" ? "../frontend/dist" : "../frontend";
+
+// ====================================
+// Middleware
+// ====================================
+
+app.use(logRoutes);
+
 app.use(
   cookieSession({
     name: "session",
-    keys: [process.env.SESSION_SECRET || "default_secret"], // secret key to sign the cookie
-    maxAge: 24 * 60 * 60 * 1000, // cookie expires after 24 hours
+    keys: [process.env.SESSION_SECRET || "default_secret"],
+    maxAge: 24 * 60 * 60 * 1000,
   }),
 );
-app.use(logRoutes); // logs every request to the terminal
 
-// auth routes - no login required for these obviously
-app.post("/api/auth/register", authControllers.register);
-app.post("/api/auth/login", authControllers.login);
-app.get("/api/auth/me", authControllers.me); // checks whos logged in
-app.delete("/api/auth/logout", authControllers.logout);
+app.use(express.json());
+app.use(express.static(path.join(__dirname, pathToFrontend)));
 
-// user routes - gotta be logged in + can only touch ur own account
-app.patch(
-  "/api/users/:user_id",
-  checkAuthentication,
-  userControllers.updateUser,
-);
-app.delete(
-  "/api/users/:user_id",
-  checkAuthentication,
-  userControllers.deleteUser,
-);
+// ====================================
+// Auth routes
+// ====================================
 
-// event routes - GET is public, everything else needs auth
-app.get("/api/events", eventControllers.listEvents); // anyone can see events
-app.post("/api/events", checkAuthentication, eventControllers.createEvent);
-app.patch(
-  "/api/events/:event_id",
-  checkAuthentication,
-  eventControllers.updateEvent,
-);
-app.delete(
-  "/api/events/:event_id",
-  checkAuthentication,
-  eventControllers.deleteEvent,
-);
-app.get("/api/users/:user_id/events", eventControllers.listEventsByUser); // public too
+app.post("/api/auth/register", register);
+app.post("/api/auth/login", login);
+app.get("/api/auth/me", me);
+app.delete("/api/auth/logout", logout);
 
-// rsvp routes - need to be logged in to rsvp
-app.post(
-  "/api/events/:event_id/rsvps",
-  checkAuthentication,
-  rsvpControllers.createRsvp,
-);
-app.delete(
-  "/api/events/:event_id/rsvps",
-  checkAuthentication,
-  rsvpControllers.deleteRsvp,
-);
-app.get("/api/users/:user_id/rsvps", rsvpControllers.listRsvpsByUser); // public
+// ====================================
+// User routes
+// ====================================
 
-// catches any random errors so the server doesnt crash
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: "Internal server error." });
+app.patch("/api/users/:user_id", checkAuthentication, updateUser);
+app.delete("/api/users/:user_id", checkAuthentication, deleteUser);
+
+// ====================================
+// Event routes
+// ====================================
+
+app.get("/api/events", listEvents);
+app.get("/api/users/:user_id/events", listEventsByUser);
+
+app.post("/api/events", checkAuthentication, createEvent);
+app.patch("/api/events/:event_id", checkAuthentication, updateEvent);
+app.delete("/api/events/:event_id", checkAuthentication, deleteEvent);
+
+// ====================================
+// RSVP routes
+// ====================================
+
+app.get("/api/users/:user_id/rsvps", listRsvpsByUser);
+
+app.post("/api/events/:event_id/rsvps", checkAuthentication, createRsvp);
+app.delete("/api/events/:event_id/rsvps", checkAuthentication, deleteRsvp);
+
+// ====================================
+// Serve frontend (FIX for your crash)
+// ====================================
+
+// IMPORTANT: React/Vite fallback route (must be AFTER API routes)
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, pathToFrontend, "index.html"));
 });
 
-// starts the server!!
+// ====================================
+// Global Error Handling
+// ====================================
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ message: "Internal Server Error" });
+});
+
+// ====================================
+// Start server
+// ====================================
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
